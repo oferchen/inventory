@@ -5,8 +5,8 @@ host inventory with unstructured schema using etcd
 
 | Field Identifier | Contents                    | Comment                           |
 |------------------|-----------------------------|-----------------------------------|
-| key              | Honstname                   |                                   |
-| monitored        | Yes/No                      |                                   |
+| key              | hostname                   |                                   |
+| monitored        | yes/no                      |                                   |
 | mode             | primary Role                |                                   |
 | roles            | additional Roles            |                                   |
 | arch             | CPU Architecture            |                                   |
@@ -15,7 +15,7 @@ host inventory with unstructured schema using etcd
 | cpumodel         | CPU Codename                |                                   |
 | swap             | swap Size                   |                                   |
 | tmpsize          | tmp Size                    | /tmp size                         |
-| serialnum        | Enclosure serial            |                                   |
+| serialnum        | enclosure serial            |                                   |
 | console          | remote management           |                                   |
 | mgmt type        | console management type     |                                   |
 | osver            | os version                  | os name/version e.g. alma9, rhel8 |
