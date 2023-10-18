@@ -3,35 +3,42 @@ host inventory with unstructured schema using etcd
 
 # common fields
 
-* key=HOSTNAME
-* monitored=YES/NO
-* mode=PRIMARY ROLE
-* roles=additional roles
-* arch=CPU Architecture
-* macaddr=MAC ADDRESS
-* cores=CORES
-* cpumodel=CPU CODENAME
-* swap=SWAP SIZE
-* tmpsize=/TMP SIZE
-* serialnum=SERIAL
-* console=REMOTE MANAGEMENT E.G. ILO, IDRAC
-* mgmt=TYPE OF CONSOLE MANAGEMENT
-* osver=E.G. ALMA9
-* backedup=UNKNOWN
-* bios=BIOS UPDATE DATE
-* ht=HYPERTHREADING ON/OFF
-* dnsdomain=E.G. tilaa.cloud
-* release=OS RELEASE STRING
-* image=Deployment Image String
-* modelname=HARDWARE MODEL NAME
-* site=E.G. AMS/EIN
-* os=linux
-* ipaddr=ip addr of first interface
-* location=RACK Location
-* memory=RAM MB amount
-* owner=company internal ownership
-* biosdate=BIOS VERSION DATE
-* disks=disk size
-* ddate=Deployment date
-* ssd=Swap disk
-* service=if part of a distributed service e.g. my web
+| Field Identifier | Contents                    | Comment                           |
+|------------------|-----------------------------|-----------------------------------|
+| key              | Honstname                   |                                   |
+| monitored        | Yes/No                      |                                   |
+| mode             | primary Role                |                                   |
+| roles            | additional Roles            |                                   |
+| arch             | CPU Architecture            |                                   |
+| macaddr          | MAC Address                 |                                   |
+| cores            | CPU Cores                   |                                   |
+| cpumodel         | CPU Codename                |                                   |
+| swap             | swap Size                   |                                   |
+| tmpsize          | tmp Size                    | /tmp size                         |
+| serialnum        | Enclosure serial            |                                   |
+| console          | remote management           |                                   |
+| mgmt type        | console management type     |                                   |
+| osver            | os version                  | os name/version e.g. alma9, rhel8 |
+| backedup         | date of last backup         |                                   |
+| bios             | bios update date            |                                   |
+| ht               | hyperthreading on/off       |                                   |
+| dnsdomain        | e.g. company.com            |                                   |
+| release          | internal os release string  |                                   |
+| image            | deployment image string     |                                   |
+| modelname        | hardware model name         |                                   |
+| site             | site code                   |                                   |
+| os               | os type                     |                                   |
+| ipaddr           | ip address of 1st interface |                                   |
+| location         | rack location               |                                   |
+| memory           | ram mb amount               |                                   |
+| owner            | company internal ownership  |                                   |
+| biosdate         | bios version date           |                                   |
+| disks            | disk size                   |                                   |
+| ddate            | deployment date             |                                   |
+| ssd              | swap disk                   |                                   |
+| service          | distributed service name    |                                   |
+|                  |                             |                                   |
+
+|                  |              |         |
+
+
