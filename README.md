@@ -36,9 +36,7 @@ host inventory with unstructured schema using etcd
 | disks            | disk size                   |                                   |
 | ddate            | deployment date             |                                   |
 | ssd              | swap disk                   |                                   |
-| service          | distributed service name    |                                   |
+| service          | distributed service name    |  e.g. web site                    |
 |                  |                             |                                   |
-
-|                  |              |         |
 
 
