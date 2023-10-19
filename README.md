@@ -32,7 +32,6 @@ host inventory with unstructured schema using etcd
 | location         | rack location               |                                   |
 | memory           | ram mb amount               |                                   |
 | owner            | company internal ownership  |                                   |
-| biosdate         | bios version date           |                                   |
 | disks            | disk size                   |                                   |
 | ddate            | deployment date             |                                   |
 | ssd              | swap disk                   |                                   |
