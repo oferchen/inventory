@@ -263,7 +263,7 @@ def main():
         help="Output format",
     )
 
-    subparsers = parser.add_subparsers(title="subcommands", dest="subcommand", required=True)
+    subparsers = parser.add_subparsers(title="subcommands", dest="subcommand")
 
     create_parser = subparsers.add_parser("create", help="Create a host")
     create_parser.add_argument("host_name", help="Host name")
