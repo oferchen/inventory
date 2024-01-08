@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 import etcd3
 import argparse
 import sys
@@ -7,7 +8,7 @@ import json
 import tabulate
 import xml.etree.ElementTree as ET
 import logging
-from typing import List, Tuple, Dict, Protocol, Any
+from typing import List, Tuple, Dict, Protocol, Any, Union
 from functools import wraps
 
 # Configuration and logging setup
@@ -36,7 +37,7 @@ class EtcdClient:
         self.client.put(key, value)
 
     @handle_exceptions
-    def get(self, key: str) -> Tuple[bytes, Any]:
+    def get(self, key: str) -> Tuple[bytes, bytes]:
         return self.client.get(key)
 
     @handle_exceptions
@@ -126,7 +127,7 @@ class OutputFormatterFactory:
 
 
 class OutputFormatterProtocol(Protocol):
-    def __init__(self, hosts: List[Tuple[str, Dict[str, Any]]]):
+    def __init__(self, hosts: List[Tuple[str, Dict[str, Any]]]) -> None:
         ...
 
     def output(self):
@@ -262,7 +263,7 @@ def main():
         help="Output format",
     )
 
-    subparsers = parser.add_subparsers(title="subcommands", dest="subcommand")
+    subparsers = parser.add_subparsers(title="subcommands", dest="subcommand", required=True)
 
     create_parser = subparsers.add_parser("create", help="Create a host")
     create_parser.add_argument("host_name", help="Host name")
@@ -288,33 +289,20 @@ def main():
         inventory.create_host(args.host_name, host_data)
         logging.info("Host created successfully!")
 
-    elif args.subcommand == "modify":
-        inventory.modify_host(args.host_name, args.field_name, args.field_value)
+    elif args.subcommand == "update":
+        inventory.update_host(args.host_name, args.field_name, args.field_value)
 
     elif args.subcommand == "remove":
         inventory.remove_host(args.host_name)
 
     elif args.subcommand == "list":
         hosts = inventory.list_hosts()
-        formatter = OutputFormatterFactory.create(output_format, hosts)
+        formatter = OutputFormatterFactory.create(args.output, hosts)
         if formatter:
             formatter.output()
-
-
-def parse_host_data(host_data_str: str) -> Dict[str, Any]:
-    """Detects the format of host data and parses it accordingly."""
-    try:
-        if host_data_str.startswith("{") and host_data_str.endswith("}"):
-            return json.loads(host_data_str)
-        elif "<" in host_data_str and ">" in host_data_str:
-            root = ET.fromstring(host_data_str)
-            return {elem.tag: elem.text for elem in root}
-        else:
-            return dict(item.split("=", 1) for item in host_data_str.split())
-    except Exception as e:
-        logging.error(f"Failed to parse host data: {str(e)}")
-        sys.exit(1)
-
+    else:
+        # Display help if no subcommand is provided
+        parser.print_help()
 
 if __name__ == "__main__":
     main()
