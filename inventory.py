@@ -301,8 +301,10 @@ def main():
         if formatter:
             formatter.output()
     else:
-        # Display help if no subcommand is provided
+        # Display custom error message and help if no subcommand is provided
+        logging.error("Error: Subcommand is required.")
         parser.print_help()
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
