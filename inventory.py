@@ -2,128 +2,278 @@
 import etcd3
 import argparse
 import sys
+import csv
 import json
 import tabulate
 import xml.etree.ElementTree as ET
+import logging
+from typing import List, Tuple, Dict, Protocol, Any
+from functools import wraps
+
+# Configuration and logging setup
+CONFIG = {"etcd_host": "localhost", "etcd_port": 2379, "base_key": "/hosts/"}
+logging.basicConfig(level=logging.INFO)
+
+
+def handle_exceptions(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            logging.error(f"An error occurred: {str(e)}")
+            sys.exit(1)
+
+    return wrapper
+
+
+class EtcdClient:
+    def __init__(self):
+        self.client = etcd3.client(host=CONFIG["etcd_host"], port=CONFIG["etcd_port"])
+
+    @handle_exceptions
+    def put(self, key: str, value: str):
+        self.client.put(key, value)
+
+    @handle_exceptions
+    def get(self, key: str) -> Tuple[bytes, Any]:
+        return self.client.get(key)
+
+    @handle_exceptions
+    def delete(self, key: str):
+        self.client.delete(key)
+
+    @handle_exceptions
+    def get_prefix(self, prefix: str) -> List[Tuple[bytes, bytes]]:
+        return self.client.get_prefix(prefix)
 
 
 class HostInventory:
-    def __init__(self, etcd_host, etcd_port):
-        self.client = etcd3.client(host=etcd_host, port=etcd_port)
-        self.base_key = "/hosts/"
+    def __init__(self):
+        self.etcd = EtcdClient()
+        self.base_key = CONFIG["base_key"]
 
-    def _build_key(self, host_name):
+    def _build_key(self, host_name: str) -> str:
+        """Builds a complete etcd key for a given host name."""
         return f"{self.base_key}{host_name}"
 
-    def create_host(self, host_name, host_data):
+    @handle_exceptions
+    def create_host(self, host_name: str, host_data: Dict[str, Any]):
         key = self._build_key(host_name)
-        try:
-            self.client.put(key, json.dumps(host_data))
-        except Exception as e:
-            print(f"Failed to add host: {str(e)}")
-            sys.exit(1)
+        if not self.get_host_data(host_name):
+            self.etcd.put(key, json.dumps(host_data))
+            logging.info(f"Host '{host_name}' added successfully.")
+        else:
+            logging.error(f"Host '{host_name}' already exists.")
 
-    def modify_host(self, host_name, field_name, field_value):
+    @handle_exceptions
+    def update_host(self, host_name: str, field_name: str, field_value: Any):
+        """Updates a field of a host with the given name."""
         key = self._build_key(host_name)
-        try:
-            host_data = self.get_host_data(host_name)
-            if host_data is not None:
-                host_data[field_name] = field_value
-                self.client.put(key, json.dumps(host_data))
-                print(f"Updated field '{field_name}' for host '{host_name}'")
-            else:
-                print(f"Host '{host_name}' not found.")
-        except Exception as e:
-            print(f"Failed to update host: {str(e)}")
-            sys.exit(1)
+        host_data = self.get_host_data(host_name)
+        if host_data is not None:
+            host_data[field_name] = field_value
+            self.etcd.put(key, json.dumps(host_data))
+            logging.info(f"Updated field '{field_name}' for host '{host_name}'.")
+        else:
+            logging.error(f"Host '{host_name}' not found.")
 
-    def remove_host(self, host_name):
+    @handle_exceptions
+    def remove_host(self, host_name: str):
+        """Removes the host with the given name."""
         key = self._build_key(host_name)
-        try:
-            self.client.delete(key)
-            print(f"Host '{host_name}' removed successfully!")
-        except Exception as e:
-            print(f"Failed to remove host: {str(e)}")
-            sys.exit(1)
+        self.etcd.delete(key)
+        logging.info(f"Host '{host_name}' removed successfully.")
 
-    def list_hosts(self):
-        try:
-            hosts = []
-            for key, value in self.client.get_prefix(self.base_key):
-                host_name = key.decode("utf-8").replace(self.base_key, "")
-                host_data = json.loads(value.decode("utf-8"))
-                hosts.append((host_name, host_data))
-            return hosts
-        except Exception as e:
-            print(f"Failed to list hosts: {str(e)}")
-            sys.exit(1)
+    @handle_exceptions
+    def list_hosts(self) -> List[Tuple[str, Dict[str, Any]]]:
+        """Lists all hosts in the inventory."""
+        hosts = []
+        for key, value in self.etcd.get_prefix(self.base_key):
+            host_name = key.decode("utf-8").replace(self.base_key, "")
+            host_data = json.loads(value.decode("utf-8"))
+            hosts.append((host_name, host_data))
+        return hosts
 
-    def get_host_data(self, host_name):
+    @handle_exceptions
+    def get_host_data(self, host_name: str) -> Dict[str, Any]:
+        """Gets the data of the host with the given name."""
         key = self._build_key(host_name)
-        _, value = self.client.get(key)
+        _, value = self.etcd.get(key)
         return json.loads(value.decode("utf-8")) if value else None
 
 
-def output_csv(hosts):
-    for host_name, host_data in hosts:
-        print(f"{host_name}, {json.dumps(host_data)}")
+class OutputFormatterFactory:
+    formatters = {}
+
+    @classmethod
+    def register_formatter(cls, output_format: str, formatter_cls):
+        cls.formatters[output_format] = formatter_cls
+
+    @classmethod
+    def create(cls, output_format: str, hosts: List[Tuple[str, Dict[str, Any]]]):
+        formatter_cls = cls.formatters.get(output_format)
+        if formatter_cls:
+            return formatter_cls(hosts)
+        else:
+            logging.error(f"No formatter registered for format: {output_format}")
+            return None
+
+    @classmethod
+    def get_available_formats(cls) -> List[str]:
+        """Returns a list of available output formats."""
+        return list(cls.formatters.keys())
 
 
-def output_table(hosts):
-    if hosts:
+class OutputFormatterProtocol(Protocol):
+    def __init__(self, hosts: List[Tuple[str, Dict[str, Any]]]):
+        ...
+
+    def output(self):
+        ...
+
+
+class BaseOutputFormatter(OutputFormatterProtocol):
+    def __init__(self, hosts: List[Tuple[str, Dict[str, Any]]]):
+        self.hosts = hosts
+
+    def output(self):
+        raise NotImplementedError("Subclasses should implement this method.")
+
+
+# CSV Output Formatter
+class CsvOutputFormatter(BaseOutputFormatter):
+    def output(self):
+        writer = csv.writer(sys.stdout)
+        writer.writerow(["Host Name", "Host Data"])
+        for host_name, host_data in self.hosts:
+            writer.writerow([host_name, json.dumps(host_data)])
+        logging.info("CSV output generated successfully.")
+
+
+# JSON Output Formatter
+class JsonOutputFormatter(BaseOutputFormatter):
+    def output(self):
+        host_dict = {host_name: host_data for host_name, host_data in self.hosts}
+        print(json.dumps(host_dict, indent=4))
+        logging.info("JSON output generated successfully.")
+
+
+# XML Output Formatter
+class XmlOutputFormatter(BaseOutputFormatter):
+    def output(self):
+        root = ET.Element("hosts")
+        for host_name, host_data in self.hosts:
+            host_element = ET.SubElement(root, "host")
+            ET.SubElement(host_element, "name").text = host_name
+            ET.SubElement(host_element, "data").text = json.dumps(host_data)
+        xml_string = ET.tostring(root, encoding="unicode")
+        print(xml_string)
+        logging.info("XML output generated successfully.")
+
+
+# Table Output Formatter
+class TableOutputFormatter(BaseOutputFormatter):
+    def output(self):
         headers = ["Host Name", "Host Data"]
-        data = [(host_name, json.dumps(host_data)) for host_name, host_data in hosts]
-        print(tabulate.tabulate(data, headers=headers, tablefmt="grid"))
-    else:
-        print("No hosts found in the inventory.")
+        table_data = [
+            (host_name, json.dumps(host_data)) for host_name, host_data in self.hosts
+        ]
+        print(tabulate.tabulate(table_data, headers, tablefmt="grid"))
+        logging.info("Table output generated successfully.")
 
 
-def output_json(hosts):
-    host_dict = dict(hosts)
-    print(json.dumps(host_dict, indent=4))
+# Block Output Formatter
+class BlockOutputFormatter(BaseOutputFormatter):
+    def output(self):
+        for host_name, host_data in self.hosts:
+            print(f"Host: {host_name}")
+            for key, value in host_data.items():
+                print(f"  {key}: {value}")
+            print("-" * 20)
+        logging.info("Block output generated successfully.")
 
 
-def output_xml(hosts):
-    root = ET.Element("hosts")
-    for host_name, host_data in hosts:
-        host_element = ET.SubElement(root, "host")
-        ET.SubElement(host_element, "name").text = host_name
-        ET.SubElement(host_element, "data").text = json.dumps(host_data)
-    xml_string = ET.tostring(root, encoding="unicode")
-    print(xml_string)
+# RFC 4180-compliant CSV Output Formatter
+class Rfc4180CsvOutputFormatter(BaseOutputFormatter):
+    def output(self):
+        writer = csv.writer(sys.stdout, dialect="excel")
+        writer.writerow(["Host Name", "Host Data"])
+        for host_name, host_data in self.hosts:
+            writer.writerow([host_name, json.dumps(host_data)])
+        logging.info("RFC 4180-compliant CSV output generated successfully.")
 
 
-def output(hosts, output_format):
-    output_functions = {
-        "csv": output_csv,
-        "table": output_table,
-        "json": output_json,
-        "xml": output_xml,
-    }
+# Typed CSV Output Formatter
+class TypedCsvOutputFormatter(BaseOutputFormatter):
+    def output(self):
+        writer = csv.writer(sys.stdout)
+        writer.writerow(["Host Name", "Host Data Type", "Host Data"])
+        for host_name, host_data in self.hosts:
+            data_type = type(host_data).__name__
+            writer.writerow([host_name, data_type, json.dumps(host_data)])
+        logging.info("Typed CSV output generated successfully.")
 
-    if output_format in output_functions:
-        output_function = output_functions[output_format]
-        output_function(hosts)
-    else:
-        print(f"Unsupported output format: {output_format}")
+
+# Script Output Formatter (CSV without header)
+class ScriptOutputFormatter(BaseOutputFormatter):
+    def output(self):
+        writer = csv.writer(sys.stdout, quoting=csv.QUOTE_NONE)
+        for host_name, host_data in self.hosts:
+            writer.writerow([host_name, json.dumps(host_data)])
+        logging.info("Script output generated successfully.")
+
+
+def parse_host_data(host_data_str: str) -> Dict[str, Any]:
+    """Detects the format of host data and parses it accordingly."""
+    try:
+        if host_data_str.startswith("{") and host_data_str.endswith("}"):
+            return json.loads(host_data_str)
+        elif "<" in host_data_str and ">" in host_data_str:
+            root = ET.fromstring(host_data_str)
+            return {elem.tag: elem.text for elem in root}
+        else:
+            return dict(item.split("=", 1) for item in host_data_str.split())
+    except Exception as e:
+        logging.error(f"Failed to parse host data: {str(e)}")
+        sys.exit(1)
 
 
 def main():
+    OutputFormatterFactory.register_formatter("csv", CsvOutputFormatter)
+    OutputFormatterFactory.register_formatter("json", JsonOutputFormatter)
+    OutputFormatterFactory.register_formatter("xml", XmlOutputFormatter)
+    OutputFormatterFactory.register_formatter("table", TableOutputFormatter)
+    OutputFormatterFactory.register_formatter("block", BlockOutputFormatter)
+    OutputFormatterFactory.register_formatter("rfc4180-csv", Rfc4180CsvOutputFormatter)
+    OutputFormatterFactory.register_formatter("typed-csv", TypedCsvOutputFormatter)
+    OutputFormatterFactory.register_formatter("script", ScriptOutputFormatter)
     parser = argparse.ArgumentParser(description="Manage a host inventory using etcd.")
-    parser.add_argument("--etcd-host", required=True, help="etcd server address")
-    parser.add_argument("--etcd-port", type=int, required=True, help="etcd server port")
-    parser.add_argument("--output", choices=["csv", "table", "json", "xml"], default="table", help="Output format")
+    parser.add_argument(
+        "--etcd-host", default=CONFIG["etcd_host"], help="etcd server address"
+    )
+    parser.add_argument(
+        "--etcd-port", type=int, default=CONFIG["etcd_port"], help="etcd server port"
+    )
+    parser.add_argument(
+        "--output",
+        choices=OutputFormatterFactory.get_available_formats(),
+        default="table",
+        help="Output format",
+    )
 
     subparsers = parser.add_subparsers(title="subcommands", dest="subcommand")
 
     create_parser = subparsers.add_parser("create", help="Create a host")
     create_parser.add_argument("host_name", help="Host name")
-    create_parser.add_argument("host_data", help="Host data in JSON, XML, or key-value format")
+    create_parser.add_argument(
+        "host_data", help="Host data in JSON, XML, or key-value format"
+    )
 
-    modify_parser = subparsers.add_parser("modify", help="Modify a host field")
-    modify_parser.add_argument("host_name", help="Host name")
-    modify_parser.add_argument("field_name", help="Field name")
-    modify_parser.add_argument("field_value", help="Field value")
+    update_parser = subparsers.add_parser("update", help="Update a host field")
+    update_parser.add_argument("host_name", help="Host name")
+    update_parser.add_argument("field_name", help="Field name")
+    update_parser.add_argument("field_value", help="Field value")
 
     remove_parser = subparsers.add_parser("remove", help="Remove a host")
     remove_parser.add_argument("host_name", help="Host name to remove")
@@ -131,30 +281,12 @@ def main():
     list_parser = subparsers.add_parser("list", help="List all hosts")
 
     args = parser.parse_args()
-
-    inventory = HostInventory(args.etcd_host, args.etcd_port)
+    inventory = HostInventory()
 
     if args.subcommand == "create":
-        host_data = args.host_data
-
-        # Detect the format of host data and parse accordingly
-        try:
-            if host_data.startswith("{") and host_data.endswith("}"):
-                # JSON format
-                host_data = json.loads(host_data)
-            elif "<" in host_data and ">" in host_data:
-                # XML format
-                root = ET.fromstring(host_data)
-                host_data = {elem.tag: elem.text for elem in root}
-            else:
-                # Key-value pairs format
-                host_data = dict(item.split("=", 1) for item in host_data.split())
-        except Exception as e:
-            print(f"Failed to parse host data: {str(e)}")
-            sys.exit(1)
-
+        host_data = parse_host_data(args.host_data)
         inventory.create_host(args.host_name, host_data)
-        print("Host created successfully!")
+        logging.info("Host created successfully!")
 
     elif args.subcommand == "modify":
         inventory.modify_host(args.host_name, args.field_name, args.field_value)
@@ -164,7 +296,24 @@ def main():
 
     elif args.subcommand == "list":
         hosts = inventory.list_hosts()
-        output(hosts, args.output)
+        formatter = OutputFormatterFactory.create(output_format, hosts)
+        if formatter:
+            formatter.output()
+
+
+def parse_host_data(host_data_str: str) -> Dict[str, Any]:
+    """Detects the format of host data and parses it accordingly."""
+    try:
+        if host_data_str.startswith("{") and host_data_str.endswith("}"):
+            return json.loads(host_data_str)
+        elif "<" in host_data_str and ">" in host_data_str:
+            root = ET.fromstring(host_data_str)
+            return {elem.tag: elem.text for elem in root}
+        else:
+            return dict(item.split("=", 1) for item in host_data_str.split())
+    except Exception as e:
+        logging.error(f"Failed to parse host data: {str(e)}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
