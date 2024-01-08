@@ -1,208 +1,230 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"encoding/xml"
 	"flag"
 	"fmt"
 	"log"
-	"os"
-	"strings"
+	"time"
 
 	"go.etcd.io/etcd/client/v3"
-	"golang.org/x/net/context"
 )
 
-type HostInventory struct {
-	client  *clientv3.Client
-	baseKey string
+const (
+	etcdHost = "localhost"
+	etcdPort = 2379
+	baseKey  = "/hosts/"
+)
+
+type Host struct {
+	Name string                 `json:"name"`
+	Data map[string]interface{} `json:"data"`
 }
 
-func NewHostInventory(etcdHost string, etcdPort int) (*HostInventory, error) {
-	endpoints := []string{fmt.Sprintf("%s:%d", etcdHost, etcdPort)}
-	client, err := clientv3.New(clientv3.Config{
-		Endpoints: endpoints,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	return &HostInventory{
-		client:  client,
-		baseKey: "/hosts/",
-	}, nil
+type Inventory struct {
+	client *clientv3.Client
 }
 
-func (h *HostInventory) Close() {
-	h.client.Close()
+func NewInventory(client *clientv3.Client) *Inventory {
+	return &Inventory{client}
 }
 
-func (h *HostInventory) buildKey(hostName string) string {
-	return h.baseKey + hostName
-}
-
-func (h *HostInventory) CreateHost(hostName string, hostData map[string]interface{}) error {
-	key := h.buildKey(hostName)
-	hostDataBytes, err := json.Marshal(hostData)
+func (i *Inventory) CreateHost(hostName string, hostData map[string]interface{}) error {
+	key := baseKey + hostName
+	host := Host{Name: hostName, Data: hostData}
+	hostJSON, err := json.Marshal(host)
 	if err != nil {
 		return err
 	}
-
-	_, err = h.client.Put(context.TODO(), key, string(hostDataBytes))
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, err = i.client.Put(ctx, key, string(hostJSON))
 	return err
 }
 
-func (h *HostInventory) ModifyHost(hostName string, fieldName string, fieldValue string) error {
-	key := h.buildKey(hostName)
-
-	// Retrieve current host data
-	resp, err := h.client.Get(context.TODO(), key)
+func (i *Inventory) UpdateHostField(hostName, fieldName, fieldValue string) error {
+	key := baseKey + hostName
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	resp, err := i.client.Get(ctx, key)
 	if err != nil {
 		return err
 	}
-
 	if len(resp.Kvs) == 0 {
-		return fmt.Errorf("Host '%s' not found", hostName)
+		return fmt.Errorf("Host not found")
 	}
-
-	// Unmarshal the existing host data
-	var hostData map[string]interface{}
-	if err := json.Unmarshal(resp.Kvs[0].Value, &hostData); err != nil {
+	host := Host{}
+	if err := json.Unmarshal(resp.Kvs[0].Value, &host); err != nil {
 		return err
 	}
-
-	// Update the specified field
-	hostData[fieldName] = fieldValue
-
-	// Marshal and update the host data
-	hostDataBytes, err := json.Marshal(hostData)
+	host.Data[fieldName] = fieldValue
+	hostJSON, err := json.Marshal(host)
 	if err != nil {
 		return err
 	}
-
-	_, err = h.client.Put(context.TODO(), key, string(hostDataBytes))
-	if err != nil {
-		return err
-	}
-
-	fmt.Printf("Updated field '%s' for host '%s'\n", fieldName, hostName)
-	return nil
+	_, err = i.client.Put(ctx, key, string(hostJSON))
+	return err
 }
 
-func (h *HostInventory) RemoveHost(hostName string) error {
-	key := h.buildKey(hostName)
-
-	_, err := h.client.Delete(context.TODO(), key)
-	if err != nil {
-		return err
-	}
-
-	fmt.Printf("Host '%s' removed successfully!\n", hostName)
-	return nil
+func (i *Inventory) RemoveHost(hostName string) error {
+	key := baseKey + hostName
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, err := i.client.Delete(ctx, key)
+	return err
 }
 
-func (h *HostInventory) ListHosts() ([]string, error) {
-	prefix := h.baseKey
-	resp, err := h.client.Get(context.TODO(), prefix, clientv3.WithPrefix())
+func (i *Inventory) ListHosts() ([]Host, error) {
+	key := baseKey
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	resp, err := i.client.Get(ctx, key, clientv3.WithPrefix())
 	if err != nil {
 		return nil, err
 	}
-
-	var hostNames []string
+	hosts := make([]Host, 0)
 	for _, kv := range resp.Kvs {
-		hostName := strings.TrimPrefix(string(kv.Key), prefix)
-		hostNames = append(hostNames, hostName)
+		host := Host{}
+		if err := json.Unmarshal(kv.Value, &host); err != nil {
+			return nil, err
+		}
+		hosts = append(hosts, host)
 	}
+	return hosts, nil
+}
 
-	return hostNames, nil
+// OutputFormatter interface and formatter types
+
+func getTypeName(data interface{}) string {
+	switch data.(type) {
+	case map[string]interface{}:
+		return "JSON"
+	case string:
+		return "String"
+	case int, int64, float64:
+		return "Number"
+	case bool:
+		return "Boolean"
+	default:
+		return "Unknown"
+	}
 }
 
 func main() {
-	etcdHost := flag.String("etcd-host", "", "etcd server address")
-	etcdPort := flag.Int("etcd-port", 0, "etcd server port")
-	outputFormat := flag.String("output", "table", "Output format")
+	etcdHostFlag := flag.String("etcd-host", etcdHost, "etcd server address")
+	etcdPortFlag := flag.Int("etcd-port", etcdPort, "etcd server port")
+	outputFlag := flag.String("output", "table", "Output format")
 	flag.Parse()
 
-	if *etcdHost == "" || *etcdPort == 0 {
-		log.Fatal("etcd-host and etcd-port must be provided")
+	etcdHost := *etcdHostFlag
+	etcdPort := *etcdPortFlag
+
+	etcdClient, err := getClient(etcdHost, etcdPort)
+	if err != nil {
+		log.Fatalf("Error initializing Etcd client: %v", err)
 	}
 
-	inventory, err := NewHostInventory(*etcdHost, *etcdPort)
-	if err != nil {
-		log.Fatalf("Failed to create inventory: %v", err)
-	}
-	defer inventory.Close()
+	inventory := NewInventory(etcdClient)
 
 	switch flag.Arg(0) {
 	case "create":
-		hostName := flag.Arg(1)
-		hostDataStr := flag.Arg(2)
-		var hostData map[string]interface{}
+		handleCreate(inventory, flag.Args()[1:])
 
-		// Detect the format of host data and parse accordingly
-		if strings.HasPrefix(hostDataStr, "{") && strings.HasSuffix(hostDataStr, "}") {
-			// JSON format
-			if err := json.Unmarshal([]byte(hostDataStr), &hostData); err != nil {
-				log.Fatalf("Failed to parse host data: %v", err)
-			}
-		} else {
-			// Key-value pairs format
-			keyValuePairs := strings.Split(hostDataStr, " ")
-			hostData = make(map[string]interface{})
-			for _, kv := range keyValuePairs {
-				parts := strings.SplitN(kv, "=", 2)
-				if len(parts) == 2 {
-					hostData[parts[0]] = parts[1]
-				}
-			}
-		}
-
-		if err := inventory.CreateHost(hostName, hostData); err != nil {
-			log.Fatalf("Failed to create host: %v", err)
-		}
-		fmt.Println("Host created successfully!")
-
-	case "modify":
-		hostName := flag.Arg(1)
-		fieldName := flag.Arg(2)
-		fieldValue := flag.Arg(3)
-
-		if err := inventory.ModifyHost(hostName, fieldName, fieldValue); err != nil {
-			log.Fatalf("Failed to modify host: %v", err)
-		}
+	case "update":
+		handleUpdate(inventory, flag.Args()[1:])
 
 	case "remove":
-		hostName := flag.Arg(1)
-
-		if err := inventory.RemoveHost(hostName); err != nil {
-			log.Fatalf("Failed to remove host: %v", err)
-		}
+		handleRemove(inventory, flag.Args()[1])
 
 	case "list":
-		hostNames, err := inventory.ListHosts()
-		if err != nil {
-			log.Fatalf("Failed to list hosts: %v", err)
-		}
-
-		switch *outputFormat {
-		case "json":
-			hostNamesJSON, _ := json.Marshal(hostNames)
-			fmt.Println(string(hostNamesJSON))
-
-		case "csv":
-			fmt.Println(strings.Join(hostNames, ","))
-
-		case "table":
-			fmt.Println("Host Names:")
-			for _, hostName := range hostNames {
-				fmt.Println(hostName)
-			}
-
-		default:
-			fmt.Printf("Unsupported output format: %s\n", *outputFormat)
-		}
+		handleList(inventory, *outputFlag)
 
 	default:
-		fmt.Println("Invalid command. Supported commands: create, modify, remove, list")
-		os.Exit(1)
+		log.Fatal("Unknown subcommand. Use 'create', 'update', 'remove', or 'list'.")
 	}
+}
+
+func getClient(host string, port int) (*clientv3.Client, error) {
+	config := clientv3.Config{
+		Endpoints: []string{fmt.Sprintf("%s:%d", host, port)},
+	}
+	return clientv3.New(config)
+}
+
+func handleCreate(inventory *Inventory, args []string) {
+	if len(args) != 2 {
+		log.Fatal("Usage: create <host_name> <host_data>")
+	}
+
+	hostName := args[0]
+	hostDataStr := args[1]
+	hostData := parseHostData(hostDataStr)
+
+	err := inventory.CreateHost(hostName, hostData)
+	if err != nil {
+		log.Fatalf("Error creating host: %v", err)
+	}
+	log.Printf("Host '%s' created successfully!", hostName)
+}
+
+func handleUpdate(inventory *Inventory, args []string) {
+	if len(args) != 3 {
+		log.Fatal("Usage: update <host_name> <field_name> <field_value>")
+	}
+
+	hostName := args[0]
+	fieldName := args[1]
+	fieldValue := args[2]
+
+	err := inventory.UpdateHostField(hostName, fieldName, fieldValue)
+	if err != nil {
+		log.Fatalf("Error updating host field: %v", err)
+	}
+	log.Printf("Field '%s' for host '%s' updated successfully!", fieldName, hostName)
+}
+
+func handleRemove(inventory *Inventory, hostName string) {
+	err := inventory.RemoveHost(hostName)
+	if err != nil {
+		log.Fatalf("Error removing host: %v", err)
+	}
+	log.Printf("Host '%s' removed successfully!", hostName)
+}
+
+func handleList(inventory *Inventory, outputFormat string) {
+	hosts, err := inventory.ListHosts()
+	if err != nil {
+		log.Fatalf("Error listing hosts: %v", err)
+	}
+	printOutput(outputFormat, hosts)
+}
+
+func printOutput(format string, hosts []Host) {
+	var formatter OutputFormatter
+
+	switch format {
+	case "table":
+		formatter = TableOutputFormatter{}
+	case "json":
+		formatter = JSONOutputFormatter{}
+	case "xml":
+		formatter = XMLOutputFormatter{}
+	case "csv":
+		formatter = CSVOutputFormatter{}
+	case "block":
+		formatter = BlockOutputFormatter{}
+	case "rfc4180-csv":
+		formatter = RFC4180CsvOutputFormatter{}
+	case "typed-csv":
+		formatter = TypedCsvOutputFormatter{}
+	case "script":
+		formatter = ScriptOutputFormatter{}
+	default:
+		log.Fatalf("Unknown output format: %s", format)
+	}
+
+	output := formatter.Format(hosts)
+	fmt.Println(output)
 }
