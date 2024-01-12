@@ -2,6 +2,7 @@
 import csv
 import json
 import logging
+import sys
 import xml.etree.ElementTree as ET
 from typing import Any, Dict, List, Tuple
 
@@ -23,7 +24,7 @@ class CsvOutputFormatter(BaseOutputFormatter):
 # JSON Output Formatter
 class JsonOutputFormatter(BaseOutputFormatter):
     def output(self):
-        host_dict = {host_name: host_data for host_name, host_data in self.hosts}
+        host_dict = dict(self.hosts)
         print(json.dumps(host_dict, indent=4))
         logging.info("JSON output generated successfully.")
 
