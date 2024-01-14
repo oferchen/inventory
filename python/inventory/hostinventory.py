@@ -80,5 +80,14 @@ class HostInventory:
     def get_host(self, host_name: str) -> Optional[Host]:
         return self.hosts.get(host_name)
 
-    def list_hosts(self) -> Dict[str, Host]:
-        return self.hosts
+    def list_hosts(self, filter_args: Optional[Dict[str, str]] = None) -> Dict[str, Host]:
+        if not filter_args:
+            return self.hosts
+        filtered_hosts = {}
+        for host_name, host in self.hosts.items():
+            match = all(
+                host.get_attribute(key) == value for key, value in filter_args.items()
+            )
+            if match:
+                filtered_hosts[host_name] = host
+        return filtered_hosts
