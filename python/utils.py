@@ -14,8 +14,10 @@ def handle_exceptions(func):
     def wrapper(*args, **kwargs):
         try:
             return func(*args, **kwargs)
+        except CustomException as e:
+            logging.error(e)
+            sys.exit(e.code)
         except Exception as e:
             logging.error(f"An error occurred: {str(e)}")
             sys.exit(1)
-
     return wrapper

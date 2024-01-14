@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 # main.py
 import argparse
+import json
 import logging
 import sys
+import xml.etree.ElementTree as ET
 from typing import Dict, Union
 
 from config import ETCD_DEFAULT_HOST, ETCD_DEFAULT_PORT, ETCD_HOSTS_BASE_DIR

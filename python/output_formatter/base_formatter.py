@@ -32,7 +32,6 @@ class OutputFormatterFactory:
         else:
             return None
 
-
 class BaseOutputFormatter(OutputFormatterProtocol):
     def __init__(self, hosts: List[Tuple[str, Dict[str, Any]]]):
         self.hosts = hosts
