@@ -7,9 +7,9 @@ import sys
 import xml.etree.ElementTree as ET
 from typing import Dict, Union
 
-from config import ETCD_DEFAULT_HOST, ETCD_DEFAULT_PORT
-from etcd_client.etcd_client import EtcdClient
-from inventory.hostinventory import Host, HostInventory
+from config import ETCD_DEFAULT_HOST, ETCD_DEFAULT_PORT, ETCD_HOSTS_BASE_DIR
+from etcd_client import EtcdClient
+from hostinventory import HostInventory
 from output_formatter.base_formatter import OutputFormatterFactory
 from output_formatter.formatters import (BlockOutputFormatter,
                                          CsvOutputFormatter,
@@ -24,10 +24,8 @@ from output_formatter.formatters import (BlockOutputFormatter,
 def parse_json(data: str) -> Dict[str, Union[bool, float, str]]:
     """
     Parse host data in JSON format.
-
     Args:
         data (str): Host data in JSON format.
-
     Returns:
         Dict[str, Union[bool, float, str]]: Parsed data as a dictionary.
     """
@@ -39,10 +37,8 @@ def parse_json(data: str) -> Dict[str, Union[bool, float, str]]:
 def parse_xml(data: str) -> Dict[str, Union[bool, float, str]]:
     """
     Parse host data in XML format.
-
     Args:
         data (str): Host data in XML format.
-
     Returns:
         Dict[str, Union[bool, float, str]]: Parsed data as a dictionary.
     """
@@ -55,10 +51,8 @@ def parse_xml(data: str) -> Dict[str, Union[bool, float, str]]:
 def parse_key_value(data: str) -> Dict[str, Union[bool, float, str]]:
     """
     Parse host data in key-value format.
-
     Args:
         data (str): Host data in key-value format (e.g., key1=value1 key2=value2).
-
     Returns:
         Dict[str, Union[bool, float, str]]: Parsed data as a dictionary.
     """
@@ -67,10 +61,8 @@ def parse_key_value(data: str) -> Dict[str, Union[bool, float, str]]:
 def parse_host_data(host_data_str: str) -> Dict[str, Union[bool, float, str]]:
     """
     Parse host data based on the detected format (JSON, XML, or key-value).
-
     Args:
         host_data_str (str): Host data in one of the supported formats.
-
     Returns:
         Dict[str, Union[bool, float, str]]: Parsed data as a dictionary.
     """
@@ -94,17 +86,24 @@ def main():
     OutputFormatterFactory.register_formatter("typed-csv", TypedCsvOutputFormatter)
     OutputFormatterFactory.register_formatter("script", ScriptOutputFormatter)
     parser = argparse.ArgumentParser(description="Manage a host inventory using etcd.")
-    # Command-line argument for specifying etcd server
     parser.add_argument(
         "--etcd-host",
         default=ETCD_DEFAULT_HOST,
         help="etcd server address (default: localhost)",
+        dest="etcd_host",
     )
     parser.add_argument(
         "--etcd-port",
         type=int,
         default=ETCD_DEFAULT_PORT,
         help="etcd server port (default: 2379)",
+        dest="etcd_port",
+    )
+    parser.add_argument(
+        "--etcd-base-dir",
+        default=ETCD_HOSTS_BASE_DIR,
+        help="Base directory for host data in Etcd (default: /Hosts/)",
+        dest="etcd_base_dir",
     )
     parser.add_argument(
         "--output",
@@ -147,7 +146,8 @@ def main():
     )
 
     args = parser.parse_args()
-    inventory = HostInventory()
+    etcd_client = EtcdClient(args.etcd_host, args.etcd_port, args.etcd_base_dir)
+    inventory = HostInventory(etcd_client)
 
     if args.subcommand == "create":
         host_data = parse_host_data(args.host_data)
@@ -163,6 +163,7 @@ def main():
     elif args.subcommand == "list":
         filter_value = args.filter or None
         hosts = inventory.list_hosts(filter_value)
+        print(f"DEBUG: Retrieved hosts from etcd: {hosts}")
         formatter = OutputFormatterFactory.create(args.output, hosts)
         if formatter:
             formatter.output()
@@ -172,5 +173,5 @@ def main():
         sys.exit(1)
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(level=logging.DEBUG)
     main()
