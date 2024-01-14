@@ -4,6 +4,11 @@ import sys
 from functools import wraps
 
 
+class CustomException(Exception):
+    def __init__(self, message: str, code: int = 1):
+        self.code = code
+        super().__init__(message)
+
 def handle_exceptions(func):
     @wraps(func)
     def wrapper(*args, **kwargs):

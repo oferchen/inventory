@@ -3,7 +3,7 @@ import json
 import logging
 from typing import Any, Dict, List, Optional, Tuple
 
-from config import CONFIG
+from config import Config
 from etcd_client import EtcdClient
 from utils import handle_exceptions
 
@@ -48,7 +48,13 @@ class HostInventory:
         self.hosts: Dict[str, Host] = {}
 
     @handle_exceptions
-    def create_host(self, host_name: str, host_data: Dict[str, str]) -> None:
+    def create_host(self, host_name, host_data):
+        host = Host(host_name)
+        for field_name, value in host_data.items():
+            host.add_attribute(field_name, value)
+
+        self.etcd_client.put(host_name, host.list_attributes())
+        self.hosts[host_name] = host
         if not host_name:
             raise ValueError("Host name cannot be empty")
 
@@ -95,9 +101,15 @@ class HostInventory:
 
     @handle_exceptions
     def get_host(self, host_name: str) -> Optional[Host]:
+        """
+        Get a host by name.
+        Args:
+            host_name (str): The name of the host to retrieve.
+        Returns:
+            Optional[Host]: The Host object if found, otherwise None.
+        """
         if not host_name:
             raise ValueError("Host name cannot be empty")
-
         return self.hosts.get(host_name)
 
     @handle_exceptions
@@ -116,12 +128,12 @@ class HostInventory:
 
         for key, value in data:
             if isinstance(value, bytes):
-                decoded_value = json.loads(value.decode('utf-8'))  # Decode JSON
+                decoded_value = json.loads(value)
             else:
                 logging.warning(f"Unexpected data type for key '{key}' in etcd. Skipping.")
                 continue
 
-            decoded_key = key.decode('utf-8').replace(full_prefix, "")
+            decoded_key = key.replace(full_prefix, "")
             host = Host(decoded_key)
             for field_name, field_value in decoded_value.items():
                 host.add_attribute(field_name, field_value)

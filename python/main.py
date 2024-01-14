@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
 # main.py
 import argparse
-import json
 import logging
 import sys
-import xml.etree.ElementTree as ET
 from typing import Dict, Union
 
 from config import ETCD_DEFAULT_HOST, ETCD_DEFAULT_PORT, ETCD_HOSTS_BASE_DIR
 from etcd_client import EtcdClient
-from hostinventory import HostInventory
+from hostinventory import HostInventory, HostInventoryFactory
+from output_formatter import OutputFormatterFactory
 from output_formatter.base_formatter import OutputFormatterFactory
 from output_formatter.formatters import (BlockOutputFormatter,
                                          CsvOutputFormatter,
@@ -161,8 +160,7 @@ def main():
         inventory.remove_host(args.key)
 
     elif args.subcommand == "list":
-        filter_value = args.filter or None
-        hosts = inventory.list_hosts(filter_value)
+        hosts = inventory.list_hosts(args.filter)
         print(f"DEBUG: Retrieved hosts from etcd: {hosts}")
         formatter = OutputFormatterFactory.create(args.output, hosts)
         if formatter:

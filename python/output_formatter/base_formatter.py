@@ -1,5 +1,5 @@
 # output_formatter/base_formatter.py
-from typing import Any, Dict, List, Union, Type, Protocol, Tuple
+from typing import Any, Dict, List, Protocol, Tuple, Type, Union
 
 
 class OutputFormatterProtocol(Protocol):

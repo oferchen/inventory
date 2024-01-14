@@ -3,29 +3,44 @@ import json
 import logging
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-from config import CONFIG
+from config import Config
 from etcd3 import client
 from utils import handle_exceptions
 
 
 class EtcdClient:
-    def __init__(self, etcd_host: str, etcd_port: int, base_dir: str = None) -> None:
-        self.etcd_host = etcd_host or CONFIG["etcd_host"]
-        self.etcd_port = etcd_port or CONFIG["etcd_port"]
-        self.base_dir = base_dir or CONFIG["base_key"]
+    """
+    Initialize the EtcdClient.
+    Args:
+        etcd_host (str): Etcd server address.
+        etcd_port (int): Etcd server port.
+        base_dir (Optional[str]): Base directory for host data in Etcd (default: None).
+    """
+    _instance = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super(EtcdClient, cls).__new__(cls)
+            cls._instance._initialize()
+        return cls._instance
+
+    def __init__(self, etcd_host: str, etcd_port: int, base_dir: Optional[str] = None) -> None:
+        self.etcd_host = etcd_host or Config.ETCD_DEFAULT_HOST
+        self.etcd_port = etcd_port or Config.ETCD_DEFAULT_PORT
+        self.base_dir = base_dir or base_dir or Config.ETCD_HOSTS_BASE_DIR
         self.client = client(host=self.etcd_host, port=self.etcd_port)
 
     @handle_exceptions
-    def put(self, key: str, value: str) -> None:
+    def put(self, key, value):
         full_key = f"{self.base_dir}{key}"
         self.client.put(full_key, json.dumps(value))
 
     @handle_exceptions
-    def get(self, key: str) -> Optional[Dict[str, Union[bool, float, str]]]:
+    def get(self, key):
         response = self.client.get(key)
         if response:
-            _, value = response
-            return json.loads(value.decode('utf-8'))  # Decode JSON
+            value = response
+            return json.loads(value)
         return None
 
     @handle_exceptions
@@ -33,13 +48,6 @@ class EtcdClient:
         self.client.delete(key)
 
     @handle_exceptions
-    def get_prefix(self, prefix: str) -> List[Tuple[bytes, bytes]]:
-        logging.info(f"Retrieving data with prefix '{prefix}' from etcd")
-        try:
-            data = list(self.client.get_prefix(prefix.encode('utf-8')))
-            logging.info(f"Retrieved data: {data}")
-        except Exception as e:
-            logging.error(f"An error occurred while retrieving data from etcd: {str(e)}")
-            return []
-
+    def get_prefix(self, prefix):
+        data = list(self.client.get_prefix(prefix))
         return data
