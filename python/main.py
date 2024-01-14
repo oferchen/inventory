@@ -8,7 +8,8 @@ import xml.etree.ElementTree as ET
 from typing import Dict, Union
 
 from config import ETCD_DEFAULT_HOST, ETCD_DEFAULT_PORT
-from etcd_client.etcd_client import HostInventory
+from etcd_client.etcd_client import EtcdClient
+from inventory.hostinventory import Host, HostInventory
 from output_formatter.base_formatter import OutputFormatterFactory
 from output_formatter.formatters import (BlockOutputFormatter,
                                          CsvOutputFormatter,

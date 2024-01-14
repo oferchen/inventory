@@ -5,52 +5,39 @@ from typing import Any, Dict, List, Optional, Tuple
 from config import CONFIG
 from utils.utils import handle_exceptions
 
+
 class Host:
     def __init__(self, name: str) -> None:
-        if not name.strip():
-            logging.error("Invalid host name: must be a non-empty string")
-            raise ValueError("Host name must be a non-empty string")
         self.name = name
-        self.fields: Dict[str, Any] = {}
-        logging.info(f"Host '{name}' initialized")
-
-        self.name = name
-        self.fields = {}
+        self.attributes: Dict[str, str] = {}
         logging.info(f"Host '{name}' initialized")
 
     @handle_exceptions
-    def add_field(self, field_name: str, value: Any) -> None:
-        if not field_name.strip():
-            logging.error("Invalid field name: must be a non-empty string")
-            raise ValueError("Field name must be a non-empty string")
-
-        self.fields[field_name] = value
-        logging.info(f"Field '{field_name}' added to host '{self.name}'")
+    def add_attribute(self, key: str, value: str) -> None:
+        if not key.strip():
+            raise ValueError("Attribute name must be a non-empty string")
+        self.attributes[key] = value
+        logging.info(f"Attribute '{key}' with value '{value}' added to host '{self.name}'")
 
     @handle_exceptions
-    def update_field(self, field_name: str, value: Any) -> None:
-        if field_name not in self.fields:
-            logging.error(f"Attempted to update non-existing field '{field_name}' in host '{self.name}'")
-            raise KeyError(f"Field '{field_name}' does not exist in host '{self.name}'")
-
-        self.fields[field_name] = value
-        logging.info(f"Field '{field_name}' updated in host '{self.name}'")
-
+    def update_attribute(self, key: str, value: Any) -> None:
+        if key not in self.attributes:
+            raise KeyError(f"Attribute '{key}' not found for host '{self.name}'")
+        self.attributes[key] = value
+        logging.info(f"Attribute '{key}' updated for host '{self.name}'")
 
     @handle_exceptions
-    def remove_field(self, field_name: str) -> None:
-        if field_name not in self.fields:
-            logging.error(f"Attempted to remove non-existing field '{field_name}' in host '{self.name}'")
-            raise KeyError(f"Field '{field_name}' does not exist in host '{self.name}'")
+    def remove_attribute(self, key: str) -> None:
+        if key not in self.attributes:
+            raise KeyError(f"Attribute '{key}' not found for host '{self.name}'")
+        del self.attributes[key]
+        logging.info(f"Attribute '{key}' removed from host '{self.name}'")
 
-        del self.fields[field_name]
-        logging.info(f"Field '{field_name}' removed from host '{self.name}'")
+    def get_attribute(self, key: str) -> Optional[str]:
+        return self.attributes.get(key)
 
-    def get_field(self, field_name: str) -> Any:
-        return self.fields.get(field_name)
-
-    def get_all_fields(self) -> Dict[str, Any]:
-        return self.fields
+    def list_attributes(self) -> Dict[str, str]:
+        return self.attributes.copy()
 
 class HostInventory:
     def __init__(self) -> None:
@@ -59,33 +46,33 @@ class HostInventory:
     @handle_exceptions
     def create_host(self, host_name: str, host_data: Dict[str, Any]) -> None:
         if host_name in self.hosts:
-            logging.error(f"Host '{host_name}' already exists")
             raise KeyError(f"Host '{host_name}' already exists")
         host = Host(host_name)
         for field_name, value in host_data.items():
             try:
-                host.add_field(field_name, value)
+                host.add_attribute(field_name, value)
             except ValueError as e:
                 logging.error(f"Error in creating host '{host_name}': {e}")
+                raise
+
         self.hosts[host_name] = host
         logging.info(f"Host '{host_name}' created successfully")
 
     @handle_exceptions
-    def update_host(self, host_name: str, field_name: str, value: Any) -> None:
+    def update_host(self, host_name: str, key: str, value: Any) -> None:
         host = self.hosts.get(host_name)
         if not host:
-            logging.error(f"Host '{host_name}' not found")
             raise KeyError(f"Host '{host_name}' not found")
         try:
-            host.update_field(field_name, value)
+            host.update_attribute(key, value)
             logging.info(f"Host '{host_name}' updated successfully")
-        except KeyError as e:
+        except (KeyError, ValueError) as e:
             logging.error(f"Error in updating host '{host_name}': {e}")
+            raise
 
     @handle_exceptions
     def remove_host(self, host_name: str) -> None:
         if host_name not in self.hosts:
-            logging.error(f"Host '{host_name}' not found")
             raise KeyError(f"Host '{host_name}' not found")
         del self.hosts[host_name]
         logging.info(f"Host '{host_name}' removed successfully")
