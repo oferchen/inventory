@@ -18,17 +18,14 @@ class EtcdClient:
     """
     _instance = None
 
-    def __new__(cls):
+    def __new__(cls, etcd_host: str = None, etcd_port: int = None, base_dir: Optional[str] = None):
         if cls._instance is None:
             cls._instance = super(EtcdClient, cls).__new__(cls)
-            cls._instance._initialize()
+            cls._instance.etcd_host = etcd_host or Config.ETCD_DEFAULT_HOST
+            cls._instance.etcd_port = etcd_port or Config.ETCD_DEFAULT_PORT
+            cls._instance.base_dir = base_dir or Config.ETCD_HOSTS_BASE_DIR
+            cls._instance.client = client(host=cls._instance.etcd_host, port=cls._instance.etcd_port)
         return cls._instance
-
-    def __init__(self, etcd_host: str, etcd_port: int, base_dir: Optional[str] = None) -> None:
-        self.etcd_host = etcd_host or Config.ETCD_DEFAULT_HOST
-        self.etcd_port = etcd_port or Config.ETCD_DEFAULT_PORT
-        self.base_dir = base_dir or base_dir or Config.ETCD_HOSTS_BASE_DIR
-        self.client = client(host=self.etcd_host, port=self.etcd_port)
 
     @handle_exceptions
     def put(self, key, value):
@@ -37,11 +34,24 @@ class EtcdClient:
 
     @handle_exceptions
     def get(self, key):
-        response = self.client.get(key)
-        if response:
+        if response := self.client.get(key):
             value = response
             return json.loads(value)
         return None
+
+    @handle_exceptions
+    def get_all(self) -> Dict[str, Dict[str, str]]:
+        """
+        Retrieve all host data from Etcd.
+        Returns:
+        Dict[str, Dict[str, str]]: All host data indexed by host name.
+        """
+        all_data = {}
+        for value, metadata in self.client.get_prefix(self.base_dir):
+            # Correctly accessing the key from metadata
+            key = metadata.key.decode('utf-8').replace(self.base_dir, '')
+            all_data[key] = json.loads(value.decode('utf-8'))
+        return all_data
 
     @handle_exceptions
     def delete(self, key: str) -> None:
@@ -49,5 +59,4 @@ class EtcdClient:
 
     @handle_exceptions
     def get_prefix(self, prefix):
-        data = list(self.client.get_prefix(prefix))
-        return data
+        return list(self.client.get_prefix(prefix))

@@ -24,8 +24,10 @@ class CsvOutputFormatter(BaseOutputFormatter):
 # JSON Output Formatter
 class JsonOutputFormatter(BaseOutputFormatter):
     def output(self):
-        host_dict = dict(self.hosts)
-        print(json.dumps(host_dict, indent=4))
+        json_data = {}
+        for host_name, host_data in self.hosts.items():
+            json_data[host_name] = host_data
+        print(json.dumps(host_data, indent=4))
         logging.info("JSON output generated successfully.")
 
 

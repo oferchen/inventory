@@ -7,10 +7,9 @@ import sys
 import xml.etree.ElementTree as ET
 from typing import Dict, Union
 
-from config import ETCD_DEFAULT_HOST, ETCD_DEFAULT_PORT, ETCD_HOSTS_BASE_DIR
+from config import Config
 from etcd_client import EtcdClient
-from hostinventory import HostInventory, HostInventoryFactory
-from output_formatter import OutputFormatterFactory
+from hostinventory import HostInventory
 from output_formatter.base_formatter import OutputFormatterFactory
 from output_formatter.formatters import (BlockOutputFormatter,
                                          CsvOutputFormatter,
@@ -89,20 +88,20 @@ def main():
     parser = argparse.ArgumentParser(description="Manage a host inventory using etcd.")
     parser.add_argument(
         "--etcd-host",
-        default=ETCD_DEFAULT_HOST,
+        default=Config.ETCD_DEFAULT_HOST,
         help="etcd server address (default: localhost)",
         dest="etcd_host",
     )
     parser.add_argument(
         "--etcd-port",
         type=int,
-        default=ETCD_DEFAULT_PORT,
+        default=Config.ETCD_DEFAULT_PORT,
         help="etcd server port (default: 2379)",
         dest="etcd_port",
     )
     parser.add_argument(
         "--etcd-base-dir",
-        default=ETCD_HOSTS_BASE_DIR,
+        default=Config.ETCD_HOSTS_BASE_DIR,
         help="Base directory for host data in Etcd (default: /Hosts/)",
         dest="etcd_base_dir",
     )
@@ -162,7 +161,8 @@ def main():
         inventory.remove_host(args.key)
 
     elif args.subcommand == "list":
-        hosts = inventory.list_hosts(args.filter)
+        filter_args = parse_key_value(args.filter) if args.filter else None
+        hosts = inventory.list_hosts(filter_args)
         print(f"DEBUG: Retrieved hosts from etcd: {hosts}")
         formatter = OutputFormatterFactory.create(args.output, hosts)
         if formatter:
