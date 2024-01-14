@@ -21,19 +21,68 @@ from output_formatter.formatters import (BlockOutputFormatter,
                                          XmlOutputFormatter)
 
 
-def parse_host_data(host_data_str: str) -> Dict[str, Union[bool, float, str]]:
-    """Detects the format of host data and parses it accordingly."""
+def parse_json(data: str) -> Dict[str, Union[bool, float, str]]:
+    """
+    Parse host data in JSON format.
+
+    Args:
+        data (str): Host data in JSON format.
+
+    Returns:
+        Dict[str, Union[bool, float, str]]: Parsed data as a dictionary.
+    """
     try:
-        if host_data_str.startswith("{") and host_data_str.endswith("}"):
-            return json.loads(host_data_str)
-        elif "<" in host_data_str and ">" in host_data_str:
-            root = ET.fromstring(host_data_str)
-            return {elem.tag: elem.text for elem in root}
-        else:
-            return dict(item.split("=", 1) for item in host_data_str.split())
-    except Exception as e:
-        logging.error(f"Failed to parse host data: {str(e)}")
-        sys.exit(1)
+        return json.loads(data)
+    except json.JSONDecodeError:
+        return {}
+
+def parse_xml(data: str) -> Dict[str, Union[bool, float, str]]:
+    """
+    Parse host data in XML format.
+
+    Args:
+        data (str): Host data in XML format.
+
+    Returns:
+        Dict[str, Union[bool, float, str]]: Parsed data as a dictionary.
+    """
+    try:
+        root = ET.fromstring(data)
+        return {elem.tag: elem.text for elem in root}
+    except ET.ParseError:
+        return {}
+
+def parse_key_value(data: str) -> Dict[str, Union[bool, float, str]]:
+    """
+    Parse host data in key-value format.
+
+    Args:
+        data (str): Host data in key-value format (e.g., key1=value1 key2=value2).
+
+    Returns:
+        Dict[str, Union[bool, float, str]]: Parsed data as a dictionary.
+    """
+    return dict(item.split("=", 1) for item in data.split())
+
+def parse_host_data(host_data_str: str) -> Dict[str, Union[bool, float, str]]:
+    """
+    Parse host data based on the detected format (JSON, XML, or key-value).
+
+    Args:
+        host_data_str (str): Host data in one of the supported formats.
+
+    Returns:
+        Dict[str, Union[bool, float, str]]: Parsed data as a dictionary.
+    """
+    parsers = [parse_json, parse_xml, parse_key_value]
+
+    for parser in parsers:
+        if parsed_data := parser(host_data_str):
+            return parsed_data
+
+    logging.error("Failed to parse host data: Invalid format")
+    return {}
+
 
 def main():
     OutputFormatterFactory.register_formatter("csv", CsvOutputFormatter)
@@ -76,22 +125,25 @@ def main():
     list_parser = create_subparser(subparsers, "list", "List all hosts")
 
     # Create subparser
-    create_parser.add_argument("host_name", help="Host name")
+    create_parser.add_argument("key", help="Host name is considered the key")
     create_parser.add_argument(
         "host_data", help="Host data in JSON, XML, or key-value format"
     )
 
     # Update subparser
-    update_parser.add_argument("host_name", help="Host name")
+    update_parser.add_argument("key", help="Host name is considered the key")
     update_parser.add_argument("field_name", help="Field name")
     update_parser.add_argument("field_value", help="Field value")
 
     # Remove subparser
-    remove_parser.add_argument("host_name", help="Host name to remove")
+    remove_parser.add_argument("key", help="Host name is considered the key")
 
     # List subparser
     list_parser.add_argument(
-        "filter", help="Filter hosts by field name and value specification"
+        "filter",
+        nargs="?",
+        help="Filter hosts by field name and value specification (e.g., key=value)",
+        default=None,
     )
 
     args = parser.parse_args()
@@ -99,22 +151,22 @@ def main():
 
     if args.subcommand == "create":
         host_data = parse_host_data(args.host_data)
-        inventory.create_host(args.host_name, host_data)
+        inventory.create_host(args.key, host_data)
         logging.info("Host created successfully!")
 
     elif args.subcommand == "update":
-        inventory.update_host(args.host_name, args.field_name, args.field_value)
+        inventory.update_host(args.key, args.field_name, args.field_value)
 
     elif args.subcommand == "remove":
-        inventory.remove_host(args.host_name)
+        inventory.remove_host(args.key)
 
     elif args.subcommand == "list":
-        hosts = inventory.list_hosts(args.filter)
+        filter_value = args.filter or None
+        hosts = inventory.list_hosts(filter_value)
         formatter = OutputFormatterFactory.create(args.output, hosts)
         if formatter:
             formatter.output()
     else:
-        # Display custom error message and help if no subcommand is provided
         logging.error("Error: Subcommand is required.")
         parser.print_help()
         sys.exit(1)
