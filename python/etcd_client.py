@@ -58,5 +58,5 @@ class EtcdClient:
         self.client.delete(key)
 
     @handle_exceptions
-    def get_prefix(self, prefix):
-        return list(self.client.get_prefix(prefix))
+    def get_prefix(self):
+        return self.client.get_prefix
