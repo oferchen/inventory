@@ -23,7 +23,6 @@ class OperatorFactory:
         "!=": operator.ne,
         "=~": re.match,
         "is": operator.is_,
-        "isnt": operator.is_not,
         "&": operator.and_,
         "|": operator.or_,
         "~": operator.xor,
@@ -35,8 +34,7 @@ class OperatorFactory:
 
     @classmethod
     def create_operator(cls, operator_symbol, left, right):
-        operator_func = cls.operators.get(operator_symbol)
-        if operator_func:
+        if operator_func := cls.operators.get(operator_symbol):
             return BinaryOperator(left, right, operator_func)
         raise ValueError(f"Operator {operator_symbol} not supported")
 
@@ -59,7 +57,6 @@ class FunctionFactory:
 
     @classmethod
     def create_function(cls, function_name: str, *args: Expression) -> UnaryOperator:
-        function = cls.functions.get(function_name)
-        if function:
+        if function := cls.functions.get(function_name):
             return UnaryOperator(args[0], function)
         raise ValueError(f"Function {function_name} not supported")

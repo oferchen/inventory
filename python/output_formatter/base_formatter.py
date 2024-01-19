@@ -1,12 +1,13 @@
 # output_formatter/base_formatter.py
-from typing import Any, Dict, List, Protocol, Tuple, Type, Union
+from typing import Any, Dict, List, Protocol, Type, Optional
+from hostinventory import HostInventory, Host
 
 
 class OutputFormatterProtocol(Protocol):
-    def __init__(self, hosts: List[Tuple[str, Dict[str, Any]]]) -> None:
+    def __init__(self) -> None:
         ...
 
-    def output(self):
+    def output(self) -> None:
         ...
 
 class OutputFormatterFactory:
@@ -24,17 +25,22 @@ class OutputFormatterFactory:
 
     @classmethod
     def create(
-        cls, format_name: str, hosts: List[Union[str, Dict[str, Union[bool, float, str]]]]
-    ) -> Union[OutputFormatterProtocol, None]:
+        cls, format_name: str, hosts: HostInventory
+    ) -> Optional[OutputFormatterProtocol]:
         """Create an instance of an output formatter based on the format name."""
         if formatter_class := cls._formatters.get(format_name):
             return formatter_class(hosts)
         else:
-            return None
+            raise ValueError(f"Formatter '{format_name}' not found.")
+
 
 class BaseOutputFormatter(OutputFormatterProtocol):
-    def __init__(self, hosts: List[Tuple[str, Dict[str, Any]]]):
+    def __init__(self, hosts: HostInventory):
         self.hosts = hosts
 
-    def output(self):
-        raise NotImplementedError("Subclasses should implement this method.")
+    def format_data(self) -> str:
+        """Format the output in a specific way. To be implemented by subclasses."""
+        raise NotImplementedError
+
+
+

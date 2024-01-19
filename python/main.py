@@ -3,13 +3,13 @@
 import argparse
 import json
 import logging
-import sys
 import xml.etree.ElementTree as ET
-from typing import Dict, Union
+from typing import Any, Dict
 
 from config import Config
 from etcd_client import EtcdClient
-from hostinventory import HostInventory
+from hostinventory import (EtcdStorage, HostFactory, HostInventory,
+                           StorageInterface)
 from output_formatter.base_formatter import OutputFormatterFactory
 from output_formatter.formatters import (BlockOutputFormatter,
                                          CsvOutputFormatter,
@@ -21,60 +21,93 @@ from output_formatter.formatters import (BlockOutputFormatter,
                                          XmlOutputFormatter)
 
 
-def parse_json(data: str) -> Dict[str, Union[bool, float, str]]:
-    """
-    Parse host data in JSON format.
-    Args:
-        data (str): Host data in JSON format.
-    Returns:
-        Dict[str, Union[bool, float, str]]: Parsed data as a dictionary.
-    """
-    try:
-        return json.loads(data)
-    except json.JSONDecodeError:
+class HostDataParser:
+    @staticmethod
+    def parse_json(data: str) -> Dict[str, Any]:
+        try:
+            return json.loads(data)
+        except json.JSONDecodeError:
+            return {}
+
+    @staticmethod
+    def parse_xml(data: str) -> Dict[str, Any]:
+        try:
+            root = ET.fromstring(data)
+            return {elem.tag: elem.text for elem in root}
+        except ET.ParseError:
+            return {}
+
+    @staticmethod
+    def parse_key_value(data: str) -> Dict[str, Any]:
+        return dict(item.split("=", 1) for item in data.split())
+
+    @staticmethod
+    def parse_host_data(host_data_str: str) -> Dict[str, Any]:
+        parsers = [HostDataParser.parse_json, HostDataParser.parse_xml, HostDataParser.parse_key_value]
+
+        for parser in parsers:
+            if parsed_data := parser(host_data_str):
+                return parsed_data
+
+        logging.error("Failed to parse host data: Invalid format")
         return {}
 
-def parse_xml(data: str) -> Dict[str, Union[bool, float, str]]:
-    """
-    Parse host data in XML format.
-    Args:
-        data (str): Host data in XML format.
-    Returns:
-        Dict[str, Union[bool, float, str]]: Parsed data as a dictionary.
-    """
-    try:
-        root = ET.fromstring(data)
-        return {elem.tag: elem.text for elem in root}
-    except ET.ParseError:
-        return {}
+class HostManager:
+    def __init__(self, inventory: HostInventory):
+        self.inventory = inventory
 
-def parse_key_value(data: str) -> Dict[str, Union[bool, float, str]]:
-    """
-    Parse host data in key-value format.
-    Args:
-        data (str): Host data in key-value format (e.g., key1=value1 key2=value2).
-    Returns:
-        Dict[str, Union[bool, float, str]]: Parsed data as a dictionary.
-    """
-    return dict(item.split("=", 1) for item in data.split())
+    def create_host(self, name: str, host_data: Dict[str, Any]) -> None:
+        host = HostFactory.create_host(name, host_data)
+        self.inventory.create_host(host)
+        logging.info("Host created successfully!")
 
-def parse_host_data(host_data_str: str) -> Dict[str, Union[bool, float, str]]:
-    """
-    Parse host data based on the detected format (JSON, XML, or key-value).
-    Args:
-        host_data_str (str): Host data in one of the supported formats.
-    Returns:
-        Dict[str, Union[bool, float, str]]: Parsed data as a dictionary.
-    """
-    parsers = [parse_json, parse_xml, parse_key_value]
+    def update_host(self, name: str, field_name: str, field_value: Any) -> None:
+        if host := self.inventory.get_host(name):
+            host.update_attribute(field_name, field_value)
+            self.inventory.update_host(name, host)
+        else:
+            logging.error(f"Host '{name}' not found")
 
-    for parser in parsers:
-        if parsed_data := parser(host_data_str):
-            return parsed_data
+    def list_hosts(self, filter: str, output_format: str):
+        try:
+            print("HostManager::HostInventory::get_all_hosts")
+            all_hosts = self.inventory.get_all_hosts()
+            print(f"Received all hosts: {all_hosts}")
+            if not all_hosts:
+                logging.error("No hosts found in storage")
+                print({"formatted_data": "{}"})
+                return
+            formatted_hosts = dict(all_hosts.items())
 
-    logging.error("Failed to parse host data: Invalid format")
-    return {}
 
+            if filter:
+                filter_key, filter_value = filter.split("=")
+                formatted_hosts = {
+                    name: attributes for name, attributes in formatted_hosts.items()
+                    if attributes.get(filter_key) == filter_value
+                }
+
+            logging.debug(f"Hosts to be formatted: {formatted_hosts}")
+            if formatter := OutputFormatterFactory.create(output_format, formatted_hosts):
+                return formatter.format_data()
+            logging.error(f"Unsupported output format: {output_format}")
+            return None
+        except Exception as e:
+            logging.error(f"Error in list_hosts: {e}")
+
+
+    def remove_host(self, name: str) -> None:
+        self.inventory.delete_host(name)
+
+def determine_logging_level(verbosity: int) -> int:
+    if verbosity == 1:
+        return logging.INFO
+    elif verbosity == 2:
+        return logging.DEBUG
+    elif verbosity >= 3:
+        return logging.NOTSET
+    else:
+        return logging.WARNING
 
 def main():
     OutputFormatterFactory.register_formatter("csv", CsvOutputFormatter)
@@ -85,31 +118,33 @@ def main():
     OutputFormatterFactory.register_formatter("rfc4180-csv", Rfc4180CsvOutputFormatter)
     OutputFormatterFactory.register_formatter("typed-csv", TypedCsvOutputFormatter)
     OutputFormatterFactory.register_formatter("script", ScriptOutputFormatter)
-    parser = argparse.ArgumentParser(description="Manage a host inventory using etcd.")
+    parser = argparse.ArgumentParser(description='Host Inventory Management using etcd.')
+    parser.add_argument('-v', '--verbose', action='count', default=0, help='Increase verbosity level')
     parser.add_argument(
         "--etcd-host",
         default=Config.ETCD_DEFAULT_HOST,
-        help="etcd server address (default: localhost)",
+        help="etcd server address (default: %(default)s)",
         dest="etcd_host",
     )
     parser.add_argument(
         "--etcd-port",
         type=int,
         default=Config.ETCD_DEFAULT_PORT,
-        help="etcd server port (default: 2379)",
+        help="etcd server port (default: %(default)s)",
         dest="etcd_port",
     )
     parser.add_argument(
         "--etcd-base-dir",
         default=Config.ETCD_HOSTS_BASE_DIR,
-        help="Base directory for host data in Etcd (default: /Hosts/)",
+        help="Base directory for host data in Etcd (default: %(default)s)",
         dest="etcd_base_dir",
     )
     parser.add_argument(
-        "--output",
+        "--format",
         choices=OutputFormatterFactory.get_available_formats(),
         default="table",
-        help="Output format",
+        help="Format output (default: %(default)s)",
+        dest="format",
     )
 
     subparsers = parser.add_subparsers(title="subcommands", dest="subcommand")
@@ -146,32 +181,36 @@ def main():
     )
 
     args = parser.parse_args()
-    etcd_client = EtcdClient(args.etcd_host, args.etcd_port, args.etcd_base_dir)
-    inventory = HostInventory(etcd_client)
+    logging_level = determine_logging_level(args.verbose)
+    logging.basicConfig(level=logging_level)
+
+    logging.debug("Debug mode is ON")
+    logging.info("Info mode is ON")
+
+    etcd_storage = EtcdStorage()
+    print("Testing get_all_hosts directly:", etcd_storage.get_all_hosts())
+    inventory = HostInventory()
+    # print(inventory.get_all_hosts())
+    host_manager = HostManager(inventory)
 
     if args.subcommand == "create":
-        host_data = parse_host_data(args.host_data)
-        inventory.create_host(args.key, host_data)
-        logging.info("Host created successfully!")
+        host_manager.create_host(args.key, args.host_data)
 
     elif args.subcommand == "update":
-        inventory.update_host(args.key, args.field_name, args.field_value)
+        host_manager.update_host(args.key, args.field_name, args.field_value)
 
     elif args.subcommand == "remove":
-        inventory.remove_host(args.key)
+        host_manager.remove_host(args.key)
 
     elif args.subcommand == "list":
-        filter_args = parse_key_value(args.filter) if args.filter else None
-        hosts = inventory.list_hosts(filter_args)
-        print(f"DEBUG: Retrieved hosts from etcd: {hosts}")
-        formatter = OutputFormatterFactory.create(args.output, hosts)
-        if formatter:
-            formatter.output()
+        formatted_output = host_manager.list_hosts(args.filter, args.format)
+        if formatted_output:
+            print(formatted_output)
+        else:
+            logging.error("No formatted output available")
     else:
         logging.error("Error: Subcommand is required.")
         parser.print_help()
-        sys.exit(1)
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.DEBUG)
     main()

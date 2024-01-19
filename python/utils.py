@@ -1,8 +1,13 @@
 # utils/utils.py
 import logging
-import sys
 from functools import wraps
 
+# Custom Exceptions
+class HostAttributeError(Exception):
+    pass
+
+class HostNotFoundError(Exception):
+    pass
 
 class CustomException(Exception):
     def __init__(self, message: str, code: int = 1):
