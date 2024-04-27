@@ -24,6 +24,22 @@ class OutputFormatterFactory:
         return list(cls._formatters.keys())
 
     @classmethod
+    def register(cls, name: str, formatter_class: Type[OutputFormatterProtocol]) -> None:
+        """Register a new formatter class with the factory.
+
+        Args:
+            name (str): The name identifier for the formatter class.
+            formatter_class (Type[OutputFormatterProtocol]): The class to register.
+
+        Returns:
+            None
+        """
+        if name in cls._formatters:
+            print(f"Warning: '{name}' formatter is already registered and will not be overwritten.")
+        else:
+            cls._formatters[name] = formatter_class
+
+    @classmethod
     def create(
         cls, format_name: str, hosts: HostInventory
     ) -> Optional[OutputFormatterProtocol]:
