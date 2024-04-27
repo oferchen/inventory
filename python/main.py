@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
 # main.py
+import os
+if 'PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION' not in os.environ:
+    os.environ['PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION'] = 'python'
+    print("Environment variable set: PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python")
+else:
+    print("Environment variable PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION already set to:", os.environ['PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION'])
 import argparse
 import json
 import logging
@@ -52,11 +58,12 @@ class HostDataParser:
         logging.error("Failed to parse host data: Invalid format")
         return {}
 
+
 class HostManager:
     def __init__(self, inventory: HostInventory):
         self.inventory = inventory
 
-    def create_host(self, name: str, host_data: Dict[str, Any]) -> None:
+    def create_host(self, name: str, host_data: str) -> None:
         host = HostFactory.create_host(name, host_data)
         self.inventory.create_host(host)
         logging.info("Host created successfully!")
@@ -79,7 +86,6 @@ class HostManager:
                 return
             formatted_hosts = dict(all_hosts.items())
 
-
             if filter:
                 filter_key, filter_value = filter.split("=")
                 formatted_hosts = {
@@ -95,9 +101,9 @@ class HostManager:
         except Exception as e:
             logging.error(f"Error in list_hosts: {e}")
 
-
     def remove_host(self, name: str) -> None:
         self.inventory.delete_host(name)
+
 
 def determine_logging_level(verbosity: int) -> int:
     if verbosity == 1:
@@ -109,15 +115,20 @@ def determine_logging_level(verbosity: int) -> int:
     else:
         return logging.WARNING
 
+
 def main():
-    OutputFormatterFactory.register_formatter("csv", CsvOutputFormatter)
-    OutputFormatterFactory.register_formatter("json", JsonOutputFormatter)
-    OutputFormatterFactory.register_formatter("xml", XmlOutputFormatter)
-    OutputFormatterFactory.register_formatter("table", TableOutputFormatter)
-    OutputFormatterFactory.register_formatter("block", BlockOutputFormatter)
-    OutputFormatterFactory.register_formatter("rfc4180-csv", Rfc4180CsvOutputFormatter)
-    OutputFormatterFactory.register_formatter("typed-csv", TypedCsvOutputFormatter)
-    OutputFormatterFactory.register_formatter("script", ScriptOutputFormatter)
+    formatters = {
+        "csv": CsvOutputFormatter,
+        "json": JsonOutputFormatter,
+        "xml": XmlOutputFormatter,
+        "table": TableOutputFormatter,
+        "block": BlockOutputFormatter,
+        "rfc4180-csv": Rfc4180CsvOutputFormatter,
+        "typed-csv": TypedCsvOutputFormatter,
+        "script": ScriptOutputFormatter,
+    }
+    for name, formatter in formatters.items():
+        OutputFormatterFactory.register(name, formatter)
     parser = argparse.ArgumentParser(description='Host Inventory Management using etcd.')
     parser.add_argument('-v', '--verbose', action='count', default=0, help='Increase verbosity level')
     parser.add_argument(
@@ -211,6 +222,7 @@ def main():
     else:
         logging.error("Error: Subcommand is required.")
         parser.print_help()
+
 
 if __name__ == "__main__":
     main()
