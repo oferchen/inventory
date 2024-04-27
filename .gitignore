@@ -1,6 +1,9 @@
 # Created by https://www.toptal.com/developers/gitignore/api/python,jetbrains,pycharm,visualstudiocode,go,macos,linux,windows
 # Edit at https://www.toptal.com/developers/gitignore?templates=python,jetbrains,pycharm,visualstudiocode,go,macos,linux,windows
 
+# etcd
+default.etcd/**
+
 ### Go ###
 # If you prefer the allow list template instead of the deny list, see community template:
 # https://github.com/github/gitignore/blob/main/community/Golang/Go.AllowList.gitignore
@@ -34,6 +37,7 @@ go.work
 .idea/**/usage.statistics.xml
 .idea/**/dictionaries
 .idea/**/shelf
+.idea/**
 
 # AWS User-specific
 .idea/**/aws.xml
