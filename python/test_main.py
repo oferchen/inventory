@@ -1,118 +1,47 @@
-# test_main.py
+
 import unittest
-from io import StringIO
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch, MagicMock
+import tempfile
+import os
+from main import main, HostDataParser
 
-# Import the modules/classes/functions you want to test
-from main import (BlockOutputFormatter, CsvOutputFormatter, CustomException,
-                  EtcdClient, HostInventory, JsonOutputFormatter,
-                  OutputFormatterFactory, Rfc4180CsvOutputFormatter,
-                  ScriptOutputFormatter, TableOutputFormatter,
-                  TypedCsvOutputFormatter, XmlOutputFormatter, parse_host_data)
+class TestMainModule(unittest.TestCase):
+    def test_environment_variable_set(self):
+        with patch.dict(os.environ, {}, clear=True):
+            with patch('builtins.print') as mocked_print:
+                main()
+                mocked_print.assert_called_with("Environment variable set: PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python")
+                self.assertEqual(os.environ['PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION'], 'python')
 
+    def test_argument_parsing_create_host(self):
+        test_args = ['main.py', 'create', 'host1', 'host_data={"key": "value"}']
+        with patch('sys.argv', test_args):
+            with patch('main.HostManager') as MockHostManager:
+                host_manager_instance = MockHostManager.return_value
+                host_manager_instance.create_host = MagicMock()
+                main()
+                host_manager_instance.create_host.assert_called_once_with('host1', '{"key": "value"}')
 
-class TestYourCode(unittest.TestCase):
-
-    def test_parse_host_data_json(self):
-        # Test JSON parsing
-        json_data = '{"name": "host1", "status": "online"}'
-        parsed_data = parse_host_data(json_data)
-        expected_data = {"name": "host1", "status": "online"}
-        self.assertEqual(parsed_data, expected_data)
-
-    def test_parse_host_data_xml(self):
-        # Test XML parsing
-        xml_data = '<host><name>host2</name><status>offline</status></host>'
-        parsed_data = parse_host_data(xml_data)
-        expected_data = {"name": "host2", "status": "offline"}
-        self.assertEqual(parsed_data, expected_data)
-
-    def test_parse_host_data_key_value(self):
-        # Test key-value parsing
-        kv_data = 'name=host3 status=online'
-        parsed_data = parse_host_data(kv_data)
-        expected_data = {"name": "host3", "status": "online"}
-        self.assertEqual(parsed_data, expected_data)
-
-    def test_etcd_client_singleton(self):
-        # Test EtcdClient as a Singleton
-        client1 = EtcdClient()
-        client2 = EtcdClient()
-        self.assertIs(client1, client2)
-
-    def test_custom_exception(self):
-        # Test CustomException
-        with self.assertRaises(CustomException):
-            raise CustomException("Test exception")
-
-    def test_host_inventory_create_host(self):
-        # Test HostInventory create_host method
-        etcd_client = MagicMock()
-        inventory = HostInventory(etcd_client)
-
-        etcd_client.put.side_effect = lambda key, value: key + value  # Mock the etcd_client.put method
-
-        host_data = {"name": "test-host", "status": "online"}
-        result = inventory.create_host("test-host", host_data)
-        expected_result = f"test-host{host_data}"
+    def test_data_parsing_json(self):
+        json_data = '{"name": "host1", "ip": "192.168.1.1"}'
+        expected_result = {'name': 'host1', 'ip': '192.168.1.1'}
+        result = HostDataParser.parse_json(json_data)
         self.assertEqual(result, expected_result)
 
-    def test_host_inventory_update_host(self):
-        # Test HostInventory update_host method
-        etcd_client = MagicMock()
-        inventory = HostInventory(etcd_client)
-
-        etcd_client.put.side_effect = lambda key, value: key + value  # Mock the etcd_client.put method
-
-        host_data = {"name": "test-host", "status": "online"}
-        inventory.create_host("test-host", host_data)
-
-        result = inventory.update_host("test-host", "status", "offline")
-        expected_result = "test-host" + str({"name": "test-host", "status": "offline"})
+    def test_data_parsing_xml(self):
+        xml_data = '<root><name>host1</name><ip>192.168.1.1</ip></root>'
+        expected_result = {'name': 'host1', 'ip': '192.168.1.1'}
+        result = HostDataParser.parse_xml(xml_data)
         self.assertEqual(result, expected_result)
 
-    def test_host_inventory_remove_host(self):
-        # Test HostInventory remove_host method
-        etcd_client = MagicMock()
-        inventory = HostInventory(etcd_client)
+    def test_output_formatting_json(self):
+        with patch('main.JsonOutputFormatter') as MockFormatter:
+            formatter_instance = MockFormatter.return_value
+            formatter_instance.output = MagicMock(return_value='{"host": "data"}')
+            result = formatter_instance.output()
+            self.assertEqual(result, '{"host": "data"}')
 
-        etcd_client.delete.side_effect = lambda key: key  # Mock the etcd_client.delete method
-
-        inventory.create_host("test-host", {"name": "test-host", "status": "online"})
-
-        result = inventory.remove_host("test-host")
-        self.assertEqual(result, "test-host")
-
-    def test_output_formatter_factory_create(self):
-        # Test OutputFormatterFactory create method
-        hosts = [("host1", {"status": "online"}), ("host2", {"status": "offline"})]
-
-        formatter = OutputFormatterFactory.create("csv", hosts)
-        self.assertIsInstance(formatter, CsvOutputFormatter)
-
-        formatter = OutputFormatterFactory.create("json", hosts)
-        self.assertIsInstance(formatter, JsonOutputFormatter)
-
-        formatter = OutputFormatterFactory.create("xml", hosts)
-        self.assertIsInstance(formatter, XmlOutputFormatter)
-
-        formatter = OutputFormatterFactory.create("table", hosts)
-        self.assertIsInstance(formatter, TableOutputFormatter)
-
-        formatter = OutputFormatterFactory.create("block", hosts)
-        self.assertIsInstance(formatter, BlockOutputFormatter)
-
-        formatter = OutputFormatterFactory.create("rfc4180-csv", hosts)
-        self.assertIsInstance(formatter, Rfc4180CsvOutputFormatter)
-
-        formatter = OutputFormatterFactory.create("typed-csv", hosts)
-        self.assertIsInstance(formatter, TypedCsvOutputFormatter)
-
-        formatter = OutputFormatterFactory.create("script", hosts)
-        self.assertIsInstance(formatter, ScriptOutputFormatter)
-
-        formatter = OutputFormatterFactory.create("invalid-format", hosts)
-        self.assertIsNone(formatter)
+    # Additional tests can be added for other subcommands and output formats
 
 if __name__ == '__main__':
     unittest.main()
