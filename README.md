@@ -1,7 +1,7 @@
 # Inventory
 
 ## Description
-The *Inventory* project manages host information with a centralized configuration stored in etcd. It supports creating, updating, and retrieving host details, making it ideal for environments where host configurations are centrally managed and accessed programmatically.
+The *Inventory* manages host information with a centralized configuration stored in etcd. It supports creating, updating, and retrieving host details, making it ideal for environments where host configurations are centrally managed and accessed programmatically.
 
 ## Key Components
 - **`main.py`**: The entry point of the application, orchestrating the primary logic and interactions.
