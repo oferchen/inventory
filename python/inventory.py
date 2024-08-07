@@ -509,13 +509,13 @@ def main():
     parser.add_argument(
         "--etcd-host",
         default=ETCD_DEFAULT_HOST,
-        help="etcd server address (default: localhost)",
+        help="etcd server address (default: %(default)s)",
     )
     parser.add_argument(
         "--etcd-port",
         type=int,
         default=ETCD_DEFAULT_PORT,
-        help="etcd server port (default: 2379)",
+        help="etcd server port (default: %(default)s)",
     )
     parser.add_argument(
         "--output",
